@@ -79,7 +79,7 @@ describe("normalizeToolParams", () => {
 
   it("passes pi's own schema validation after repair", () => {
     let tool: any;
-    registerRecallTool({ registerTool: (t: any) => { tool = t; } } as any);
+    registerRecallTool({ registerTool: (t: any) => { tool = t; } } as any, "full");
     const raw = { query: "jpeg", mode: "all", expand: "459", limit: 20 };
     expect(() => validateToolArguments(tool, { id: "1", name: "vcc_recall", arguments: raw } as any)).toThrow();
     const args = validateToolArguments(tool, { id: "1", name: "vcc_recall", arguments: tool.prepareArguments(raw) } as any);

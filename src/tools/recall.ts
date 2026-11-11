@@ -1,7 +1,8 @@
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { normalizeToolParams, parseToolRequest } from "../core/recall-request";
+import { normalizeToolParams, parseToolRequest, type RecallProfile } from "../core/recall-request";
 import { invalidExpandIndices, openRecallView, runRecall, type RecallPagingHints } from "../core/recall-run";
+import { loadSettings } from "../core/settings";
 
 export { invalidExpandIndices };
 
@@ -15,7 +16,61 @@ const TOOL_PAGING_HINTS: RecallPagingHints = {
     `\n--- Read around a hit: range:[${Math.max(0, n - 3)}, ${n + 3}]; full text: expand:[${n}]${scope === "all" ? " (with scope:'all')" : ""} ---`,
 };
 
-export const registerRecallTool = (pi: ExtensionAPI) => {
+/**
+ * The grep profile (pi-vcc-mini default): one string query + two optional
+ * context ints, grep-like line output. ~1/6 of the full profile's declaration
+ * cost, tuned for small local models that navigate by search-refine loops
+ * and avoid complex tool schemas. The full engine stays available via
+ * /pi-vcc-recall and recallProfile:"full".
+ */
+const GREP_PAGING_HINTS: RecallPagingHints = {
+  outOfRange: () => "",
+  nextPage: () => "",
+  skipCurrentTurn: true,
+};
+
+const registerGrepRecallTool = (pi: ExtensionAPI) => {
+  pi.registerTool({
+    name: "vcc_recall",
+    label: "VCC Recall",
+    description: [
+      "Search this session's full raw history (including compacted-away parts) like grep, before claiming context is gone.",
+      "Returns matching lines with entry numbers. Case-insensitive; a regex works too.",
+      "query:'#N' returns entry N in full (N = the number in summary refs like (#12)).",
+      "before/after: entries of context around each hit. grep flags like -C 2 in the query also work.",
+    ].join("\n"),
+    promptSnippet:
+      "Search raw session history (compacted parts too) with vcc_recall before claiming context is gone; query:'#N' returns entry N in full.",
+    parameters: Type.Object({
+      query: Type.String({
+        description: "Keywords or regex to search for, e.g. 'redis cache'. Or '#N' for the full text of entry N.",
+      }),
+      before: Type.Optional(
+        Type.Number({ description: "Context entries before each hit. Default 1." }),
+      ),
+      after: Type.Optional(
+        Type.Number({ description: "Context entries after each hit. Default 1." }),
+      ),
+    }),
+    // Runs before pi validates the schema, so repairable mistakes never reach the agent as errors.
+    prepareArguments: (args: unknown) => normalizeToolParams(args) as any,
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const sessionFile = ctx.sessionManager.getSessionFile();
+      if (!sessionFile) {
+        return {
+          content: [{ type: "text", text: "No session file available." }],
+          details: undefined,
+        };
+      }
+      const request = parseToolRequest(params, "grep");
+      const view = openRecallView(sessionFile, request.scope, ctx.sessionManager);
+      const text = runRecall(request, view, GREP_PAGING_HINTS);
+      return { content: [{ type: "text", text }], details: undefined };
+    },
+  });
+};
+
+const registerFullRecallTool = (pi: ExtensionAPI) => {
   pi.registerTool({
     name: "vcc_recall",
     label: "VCC Recall",
@@ -82,10 +137,19 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
           details: undefined,
         };
       }
-      const request = parseToolRequest(params);
+      const request = parseToolRequest(params, "full");
       const view = openRecallView(sessionFile, request.scope, ctx.sessionManager);
       const text = runRecall(request, view, TOOL_PAGING_HINTS);
       return { content: [{ type: "text", text }], details: undefined };
     },
   });
+};
+
+export const registerRecallTool = (pi: ExtensionAPI, profile?: RecallProfile) => {
+  const effective = profile ?? loadSettings().recallProfile;
+  if (effective === "full") {
+    registerFullRecallTool(pi);
+  } else {
+    registerGrepRecallTool(pi);
+  }
 };

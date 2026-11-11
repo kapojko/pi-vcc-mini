@@ -86,7 +86,7 @@ const hasNestedQuantifier = (pattern: string): boolean => {
 
 /** Try to compile as regex; fall back to escaped literal. Patterns with nested
  *  unbounded quantifiers are treated as literals rather than compiled. */
-const safeRegex = (pattern: string): RegExp => {
+export const safeRegex = (pattern: string): RegExp => {
   if (hasNestedQuantifier(pattern)) return new RegExp(escapeRegex(pattern), "i");
   try {
     return new RegExp(pattern, "i");
@@ -202,7 +202,7 @@ const looksEncoded = (run: string): boolean => {
 /** An entry's text as search sees it: encoded data is dropped, as search engines drop
  *  overlong tokens. Terms match as substrings, so a short term would hit inside it
  *  hundreds of times, and it would count as one word of length. */
-const searchableText = (msg: Message | undefined, e: RenderedEntry): string =>
+export const searchableText = (msg: Message | undefined, e: RenderedEntry): string =>
   (msg ? fullText(msg) : e.summary).replace(BASE64_RUN, (run) => (looksEncoded(run) ? "…" : run));
 
 interface BM25Context {

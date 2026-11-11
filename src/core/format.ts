@@ -75,6 +75,9 @@ export interface FormatSummaryOptions {
 export const formatSummary = (data: SectionData, options: FormatSummaryOptions = {}): string => {
   const capBriefTranscript = options.capBriefTranscript ?? true;
   const headerParts = [
+    // pi-vcc-mini: the model-written checkpoint leads the summary; it is the
+    // anchor the model needs to continue after compaction. Free text.
+    data.checkpoint ? `[Checkpoint]\n${data.checkpoint}` : "",
     section("Early Session Requests", data.earlyRequests),
     section("Files And Changes", data.filesAndChanges),
     section("Commits", data.commits),

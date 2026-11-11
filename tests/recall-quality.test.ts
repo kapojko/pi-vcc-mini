@@ -24,7 +24,7 @@ const makeSession = (n: number, textOf: (i: number) => string) => {
 
 const register = () => {
   let tool: any;
-  registerRecallTool({ registerTool: (t: any) => { tool = t; } } as any);
+  registerRecallTool({ registerTool: (t: any) => { tool = t; } } as any, "full");
   return tool;
 };
 

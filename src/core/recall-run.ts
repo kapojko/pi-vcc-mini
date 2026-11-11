@@ -3,6 +3,7 @@ import { searchEntriesDetailed, getTouchedFiles, type SearchHit } from "./search
 import { formatRecallOutput, formatTouchedOutput, TOUCHED_PAGE_SIZE } from "./format-recall";
 import { getActiveLineageEntryIds, type LineageSessionManagerLike } from "./lineage";
 import { expandEntryFile } from "./drill-down";
+import { runGrep } from "./grep-recall";
 import type { RecallScope } from "./recall-scope";
 import type { RecallRequest } from "./recall-request";
 import type { Message } from "@earendil-works/pi-ai";
@@ -116,6 +117,7 @@ const IGNORED_REASON: Record<RecallRequest["action"]["kind"], string> = {
   expand: "expand runs alone; send the rest in a separate call",
   range: "range runs alone; send the rest in a separate call",
   search: "",
+  grep: "",
   recent: "page applies to query or range results",
 };
 
@@ -167,6 +169,13 @@ const runAction = (request: RecallRequest, view: RecallView, hints: RecallPaging
 
     case "search":
       return runSearch(action.query, action.page, view, hints, hints.skipCurrentTurn ? view.currentTurn() : undefined);
+
+    case "grep":
+      return runGrep(action.query, view, {
+        before: action.before,
+        after: action.after,
+        skip: hints.skipCurrentTurn ? view.currentTurn() : undefined,
+      });
 
     case "recent": {
       const { rendered } = view.load(false);

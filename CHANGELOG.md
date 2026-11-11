@@ -1,8 +1,18 @@
 # Changelog
 
-All notable changes to `@sting8k/pi-vcc` are documented in this file.
+All notable changes are documented in this file. Entries after `0.11.2` are pi-vcc-mini (the kapojko fork for local models).
 
-## [Unreleased]
+## [1.0.0] — pi-vcc-mini fork
+
+### Added
+
+- **Pre-compaction checkpoint** — when context usage reaches `checkpointThreshold` (default 0.8), a one-shot custom message asks the model to write a short status note (goal / done / next / gotchas). Injected via the `turn_end` boundary API (`entries` + `continue: true`) so it rides the cached prefix, with a `before_agent_start` fallback for runs that start already above threshold. The note is pinned as the leading `[Checkpoint]` summary section — **replaced, not accumulated**, on every compaction that has a newer one — kept in full (the first text-bearing reply after the marker). Manual `/compact` and `/pi-vcc` are cancelled once, the checkpoint runs as its own turn, and compaction re-triggers with the original instructions (timeout fallback: 180 s). The checkpoint request marker is excluded from the summarizer input. Settings: `checkpointEnabled`, `checkpointThreshold`, `checkpointPrompt`.
+- **grep-style `vcc_recall` profile** (default; `recallProfile: "grep"`) — the model-facing tool becomes `query` + optional `before`/`after` context entries. Line-granular, chronological, case-insensitive output capped at 40 lines / 15 entries; literal-then-OR matching chain; `'#N'` (also `'12 15'`) expands entries in full; `#N:path` drill-down kept; grep flags (`-C 3`, `-B 1 -A 4`, `-i`) typed into the query are parsed leniently and mapped onto before/after. Declaration: 915 chars vs 2395 (full profile). The `/pi-vcc-recall` command keeps the full ranked-search surface in both profiles. Config file is `~/.pi/agent/pi-vcc-mini.json` (upstream's `pi-vcc-config.json` untouched).
+
+### Changed
+
+- Minimum Pi host is 1.5.0 (was 0.74.0): the checkpoint uses `turn_end` boundary entries, `before_agent_start` `messageType`, and `ctx.compact()`.
+- bun.lock / CI pin Pi 1.5.2.
 
 ## [0.11.2]
 

@@ -1,4 +1,32 @@
-# pi-vcc
+# pi-vcc-mini
+
+> Fork of [sting8k/pi-vcc](https://github.com/sting8k/pi-vcc) (MIT) tuned for **small local models with slow prefill and short context** — the setup where a 99.5% prompt-cache hit rate is the whole point. Two additions on top of upstream 0.11.2:
+>
+> - **Pre-compaction checkpoint (A):** when context reaches ~80%, the model is asked (once per window) to write a short status note — goal / done / next / gotchas. The note rides the cached prefix (near-zero prefill cost) and is **pinned as a `[Checkpoint]` section** into every later pi-vcc summary, so the model's own line of thought survives the algorithmic brief, which would otherwise compress it to one line. Manual `/compact` and `/pi-vcc` checkpoint first, then compact.
+> - **grep-style `vcc_recall` (B):** the model-facing tool is a lean grep — `query` + optional `before`/`after` context entries, `'#N'` for full entries — at **915 chars of declaration vs 2395 upstream (−62%)**. Line-granular output, chronological order, lenient repair of grep flags (`-C 3`) typed into the query. The full multi-mode surface stays available to you via `/pi-vcc-recall` and `recallProfile: "full"`.
+>
+> Everything else is upstream pi-vcc: algorithmic compaction (no LLM call, ~1 ms), smart keep-tail, session-global `#N` refs. Config lives in `~/.pi/agent/pi-vcc-mini.json` (separate from upstream's `pi-vcc-config.json`, so both can coexist). Requires Pi >= 1.5.0.
+
+## Install
+
+```
+pi install git:github.com/kapojko/pi-vcc-mini
+```
+
+## Fork settings (on top of upstream's)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `checkpointEnabled` | `true` | Ask the model for a status note before compaction |
+| `checkpointThreshold` | `0.8` | Fire when `getContextUsage().percent >= threshold×100` |
+| `checkpointPrompt` | built-in | The checkpoint request text (numbered goal/done/next/gotchas) |
+| `recallProfile` | `"grep"` | `"grep"` = lean tool for models; `"full"` = upstream surface |
+
+See [VERIFICATION.md](./VERIFICATION.md) for the test plan and live-model scenarios.
+
+---
+
+# pi-vcc (upstream)
 
 [![npm](https://img.shields.io/npm/v/@sting8k/pi-vcc)](https://www.npmjs.com/package/@sting8k/pi-vcc)
 
@@ -113,31 +141,28 @@ On the next compaction, the sections are merged with the previous summary and re
 
 Pi's default compaction drops old messages for good. `vcc_recall` reads the raw session file instead, so anything compacted away stays reachable. It searches the active conversation lineage by default; `scope:"all"` also covers edited or retried branches. Only the current session is searchable.
 
-Plain keywords work best. Multi-word queries are OR-matched and ranked, rare terms weigh more, and a regex is accepted (falling back to keywords if it matches nothing):
+### The model's tool (default: grep profile)
+
+One string query in, matching **lines** out — chronological, case-insensitive, `#N`-tagged — plus optional neighbor entries:
 
 ```
-vcc_recall({ query: "auth token" })                  // ranked OR search
-vcc_recall({ query: "auth token", page: 2 })         // 5 results per page
-vcc_recall({ query: "hook|inject" })                 // regex
-vcc_recall({ query: "auth token", scope: "all" })    // all lineages
+vcc_recall({ query: "auth token" })               // matching lines, 1 entry of context each side
+vcc_recall({ query: "auth token", after: 3 })     // more context entries
+vcc_recall({ query: "hook|inject" })              // regex works
+vcc_recall({ query: "#1253" })                     // entry #1253 in full (summary refs point here)
 ```
 
-The `#N` refs in a summary, such as `(#1253)`, are the same numbers recall uses, so the agent can go straight to them:
+Multi-word queries match the literal phrase first, then fall back to per-term OR. Grep flags typed into the query (`"-C 3 auth"`) are understood. The declaration is 915 chars (upstream's full surface: 2395).
+
+### Your command: `/pi-vcc-recall` (full surface, any profile)
 
 ```
-vcc_recall({ range: [1250, 1290] })                  // entries in order, 20 per page
-vcc_recall({ expand: [1253] })                       // full text
-vcc_recall({ mode: "touched" })                      // files worked on, with #N
-vcc_recall({ query: "#1253:auth.ts" })               // a file's content from #1253
+/pi-vcc-recall auth token            // ranked search, 5 per page
+/pi-vcc-recall auth token scope:all   // edited/retried branches too
+/pi-vcc-recall auth token page:2
 ```
 
-Each call does one of these. `page` and `scope` work with all of them, and a param the call cannot use is named in the output instead of dropped silently. One result is capped at 50 KB; a clipped one starts with a warning.
-
-The same search as a slash command, with results shown in the chat and passed to the agent:
-
-```
-/pi-vcc-recall auth token scope:all
-```
+Set `recallProfile: "full"` in `~/.pi/agent/pi-vcc-mini.json` to give the model the upstream multi-mode tool instead (query/range/expand/touched/scope/page).
 
 ## How it works
 

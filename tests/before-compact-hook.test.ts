@@ -226,7 +226,7 @@ describe("registerBeforeCompactHook: compact-all path", () => {
   });
  
   test("manual /pi-vcc marker still compacts and records reason metadata", () => {
-    setConfig({ debug: false, overrideDefaultCompaction: false });
+    setConfig({ debug: false, overrideDefaultCompaction: false, checkpointEnabled: false });
     const { pi, invokeBefore } = createMockPi();
     registerBeforeCompactHook(pi);
 

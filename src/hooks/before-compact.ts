@@ -7,6 +7,13 @@ import { normalize } from "../core/normalize";
 import { buildGlobalIndexById, loadGlobalIndexById } from "../core/global-indices";
 import { parseKeepAndPrompt, PI_VCC_COMPACT_INSTRUCTION } from "../core/compact-args";
 import { loadSettings, type PiVccSettings } from "../core/settings";
+import {
+  checkpointForSummary,
+  effectiveSkipCustomTypes,
+  interceptManualCompact,
+  isManualCompactPending,
+  noteManualCompactProceeding,
+} from "./checkpoint";
 import { calibrateCharsPerToken, estimateMessageContentChars, estimateMessageContentTokens, estimateTokensFromChars } from "../core/token-estimate";
 import type { PiVccCompactionDetails } from "../details";
 import type { CompactionReason } from "../types";
@@ -608,6 +615,16 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI, piVersion: string = 
     const { reason, willRetry } = readCompactionEventContext(event);
     const settings = loadSettings();
 
+    // pi-vcc-mini: manual compactions checkpoint first. Cancel once, let the
+    // checkpoint turn run, then re-trigger via pi.compact() (agent_end in
+    // checkpoint.ts). Applies to /compact and /pi-vcc alike, independent of
+    // overrideDefaultCompaction, so the checkpoint exists even when pi core
+    // owns the actual summary.
+    if (reason === "manual" && interceptManualCompact(pi, settings, customInstructions, ctx)) {
+      return { cancel: true };
+    }
+    noteManualCompactProceeding();
+
     // Always handle explicit /pi-vcc marker.
     // Otherwise, only handle when user opted in via settings.
     const { isPiVcc, keepUserTurns, keepUserTurnsExplicit, followUpPrompt } = parseCompactionInstructions(customInstructions);
@@ -645,13 +662,16 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI, piVersion: string = 
       smartKeepTail: settings.smartKeepTail,
       charsPerToken: tokenEstimate.charsPerToken,
     });
-    let ownCut = buildOwnCut(branchEntries as any[], smartKeep.keepUserTurns, settings.skipCustomTypes);
+    // pi-vcc-mini: the checkpoint request marker is summarizer noise (same
+    // boilerplate every window); the model's answer is pinned in full below.
+    const skipCustom = effectiveSkipCustomTypes(settings);
+    let ownCut = buildOwnCut(branchEntries as any[], smartKeep.keepUserTurns, skipCustom);
     // Default path only: rescue autonomous / oversized-tail sessions with a
     // token-budget cut. Explicit keep:N is respected absolutely (no-op here).
     if (ownCut.ok && !keepUserTurnsExplicit) {
       ownCut = applyTailBudget(branchEntries as any[], ownCut, {
         charsPerToken: tokenEstimate.charsPerToken,
-        skipCustomTypes: settings.skipCustomTypes,
+        skipCustomTypes: skipCustom,
       });
     }
     if (!ownCut.ok) {
@@ -727,15 +747,16 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI, piVersion: string = 
 
     pendingFollowUpPrompt = followUpPrompt;
     // Filter user-declared customTypes right before summarizer input
-    // (skipCustomTypes). Cut selection, token calibration, firstKeptEntryId
-    // and kept-user-turn counting are already fixed upstream — this only
-    // changes what the summarizer sees. The pair must stay aligned.
+    // (skipCustomTypes, plus our checkpoint marker). Cut selection, token
+    // calibration, firstKeptEntryId and kept-user-turn counting are already
+    // fixed upstream — this only changes what the summarizer sees. The pair
+    // must stay aligned.
     let agentMessages = ownCut.messages;
     let agentSelectedIds = ownCut.selectedIds;
-    if (settings.skipCustomTypes.length > 0) {
+    if (skipCustom.length > 0) {
       const pairs = agentMessages
         .map((m: any, i: number) => ({ m, id: agentSelectedIds[i] }))
-        .filter(({ m }: any) => !isSkippedCustom(m, settings.skipCustomTypes));
+        .filter(({ m }: any) => !isSkippedCustom(m, skipCustom));
       agentMessages = pairs.map((p: any) => p.m);
       agentSelectedIds = pairs.map((p: any) => p.id);
     }
@@ -843,6 +864,11 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI, piVersion: string = 
         modifiedFiles: [...preparation.fileOps.written, ...preparation.fileOps.edited],
       },
       trackCommands: settings.trackCommands,
+      // pi-vcc-mini: pin the model-written checkpoint when its exchange fell
+      // inside the summarized prefix (still-in-tail exchanges survive whole).
+      checkpoint: settings.checkpointEnabled
+        ? checkpointForSummary(branchEntries as any[], new Set(ownCut.selectedIds))
+        : undefined,
       ranking: {
         maxBriefChars: Math.round(RANKED_BRIEF_BUDGET_TOKENS * tokenEstimate.charsPerToken),
         maxBriefCharsCeiling: Math.round(RANKED_BRIEF_CEILING_TOKENS * tokenEstimate.charsPerToken),
@@ -864,6 +890,8 @@ export const registerBeforeCompactHook = (pi: ExtensionAPI, piVersion: string = 
     dbg(config, {
       usedOwnCut: true,
       budgetCut: ownCut.budgetCut,
+      checkpointPinned: summary.startsWith("[Checkpoint]"),
+      checkpointPending: isManualCompactPending(),
       compaction: { reason, willRetry },
       messagesToSummarize: agentMessages.length,
       messagesPreviewHead: agentMessages.slice(0, 3).map((m: any) => ({ role: m.role, preview: previewContent(m.content) })),

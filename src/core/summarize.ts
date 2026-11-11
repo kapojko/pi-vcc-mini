@@ -22,6 +22,13 @@ export interface CompileInput {
    * empty/omitted by default, threaded through from
    * PiVccSettings.trackCommands by the caller (hooks/before-compact.ts). */
   trackCommands?: readonly string[];
+  /**
+   * pi-vcc-mini: the model-written pre-compaction checkpoint to pin as the
+   * leading [Checkpoint] section. Undefined when the checkpoint exchange is
+   * still in the kept tail (it survives on its own) or none exists. Capped
+   * by the caller (hooks/before-compact.ts) to checkpointBudgetTokens.
+   */
+  checkpoint?: string;
 }
 
 export interface RankedCompileInput extends CompileInput {
@@ -29,7 +36,7 @@ export interface RankedCompileInput extends CompileInput {
 }
 
 const EARLY = "Early Session Requests";
-const HEADER_NAMES = [EARLY, "Files And Changes", "Commits", "Tracked Commands", "User Messages"];
+const HEADER_NAMES = ["Checkpoint", EARLY, "Files And Changes", "Commits", "Tracked Commands", "User Messages"];
 
 const SEPARATOR = "\n\n---\n\n";
 
@@ -51,13 +58,23 @@ const splitSummary = (text: string): { head: string; brief: string } => {
   return { head: text.slice(0, idx), brief: text.slice(idx + SEPARATOR.length).trim() };
 };
 
+/** Sections whose body is free text rather than line items: it may contain
+ * blank lines, so it ends at the next header line, not at a blank line. */
+const FREE_TEXT_HEADERS = new Set(["Checkpoint"]);
+
 /** Extract a named section from summary text */
 export const sectionOf = (text: string, header: string): string => {
   const lines = splitSummary(text).head.split("\n");
   const start = lines.indexOf(`[${header}]`);
   if (start < 0) return "";
   let end = start + 1;
-  while (end < lines.length && lines[end].trim() !== "") end++;
+  if (FREE_TEXT_HEADERS.has(header)) {
+    // Free text (e.g. the model-written checkpoint note) has paragraphs;
+    // it runs until the next section header line, not the next blank line.
+    while (end < lines.length && !HEADER_LINE_RE.test(lines[end])) end++;
+  } else {
+    while (end < lines.length && lines[end].trim() !== "") end++;
+  }
   return lines.slice(start, end).join("\n").trim();
 };
 
@@ -108,6 +125,10 @@ const dedupCommitLines = (lines: string[]): string[] => {
 const mergeHeaderSection = (header: string, prev: string, fresh: string): string => {
   if (!prev) return fresh;
   if (!fresh) return prev;
+
+  // pi-vcc-mini: the checkpoint is a status snapshot. A newer one replaces
+  // the older; without a fresh one the last known status is kept as is.
+  if (header === "Checkpoint") return fresh;
 
   // Files And Changes: merge by category (Modified/Created/Read), dedup paths
   if (header === "Files And Changes") {
@@ -297,6 +318,7 @@ const compileWithBriefBlocks = (input: CompileInput, options: CompileWithBriefBl
     : undefined;
   const hasEarlyRequests = prev !== undefined && pinnedEarlyRequests(prev).length > 0;
   const data = buildSections({ blocks, briefBlocks, fileOps: input.fileOps, trackCommands: input.trackCommands, hasEarlyRequests });
+  if (input.checkpoint) data.checkpoint = input.checkpoint;
   const fresh = formatSummary(data, { capBriefTranscript: options.capFreshBrief ?? true });
   const merged = prev ? mergePrevious(prev, fresh, { preserveFreshBrief: options.preserveFreshBriefOnMerge }) : fresh;
   if (!merged) return "";

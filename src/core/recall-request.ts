@@ -3,6 +3,9 @@ import { normalizeRecallMode, normalizeRecallScope, parseRecallScope, type Recal
 
 export type DrillTarget = NonNullable<ReturnType<typeof parseDrillDown>>;
 
+/** Which vcc_recall surface the tool declares (core/settings.ts recallProfile). */
+export type RecallProfile = "grep" | "full";
+
 /** The one thing a recall call does. Exactly one action runs per call. */
 export type RecallAction =
   | { kind: "drill"; target: DrillTarget }
@@ -10,6 +13,7 @@ export type RecallAction =
   | { kind: "expand"; indices: number[] }
   | { kind: "range"; range: unknown[]; page: number }
   | { kind: "search"; query: string; page: number }
+  | { kind: "grep"; query: string; before: number; after: number }
   | { kind: "recent"; query?: string };
 
 export interface RecallRequest {
@@ -28,12 +32,15 @@ export interface RecallToolParams {
   page?: number;
   scope?: string;
   mode?: string;
+  /** grep profile only: entries of context around each hit. */
+  before?: number;
+  after?: number;
 }
 
 /** Where normalizeToolParams records values it had to drop; read by parseToolRequest. */
 export const DROPPED_KEY = "_vccDropped";
 
-const KNOWN_PARAMS = new Set(["query", "range", "expand", "page", "scope", "mode"]);
+const KNOWN_PARAMS = new Set(["query", "range", "expand", "page", "scope", "mode", "before", "after"]);
 
 /** 12, "12", "#12", " 12 " -> 12. Anything else -> undefined. */
 const toIndex = (v: unknown): number | undefined => {
@@ -53,10 +60,50 @@ const indexList = (s: string): number[] | undefined => {
 };
 
 /**
+ * Leading grep-style flags inside a query string, consumed leniently and
+ * mapped onto before/after: -C n (both), -B n, -A n, -i (already the
+ * default), and harmless single-char flags. The grep profile's description
+ * does not teach this — it is free robustness for models that pattern-match
+ * shell syntax into the string.
+ */
+const GREP_FLAG_RE = /^-(?:[iuv]+|[ABC]\s*\d+)(?:\s+|$)/;
+
+export interface ParsedGrepFlags {
+  query: string;
+  before?: number;
+  after?: number;
+}
+
+export const parseGrepFlags = (raw: string): ParsedGrepFlags => {
+  let q = raw;
+  let before: number | undefined;
+  let after: number | undefined;
+  for (let guard = 0; guard < 8; guard++) {
+    const m = GREP_FLAG_RE.exec(q);
+    if (!m) break;
+    const flag = m[0].trim();
+    q = q.slice(m[0].length);
+    const num = /\d+/.exec(flag);
+    const n = num ? Math.min(10, parseInt(num[0], 10)) : undefined;
+    if (flag.startsWith("-C")) {
+      before = n ?? 2;
+      after = n ?? 2;
+    } else if (flag.startsWith("-B")) {
+      before = n ?? 2;
+    } else if (flag.startsWith("-A")) {
+      after = n ?? 2;
+    }
+    // -i/-u/-v: case-insensitivity is already the default; nothing to apply.
+  }
+  return { query: q.trim(), before, after };
+};
+
+/**
  * Repair argument mistakes whose meaning is certain, before pi validates the
  * schema: numbers sent as strings or with a leading #, a single index where a
  * list is expected, a range written as "10-20" or reversed, enum values in
- * the wrong case, and a scope value put in mode. Values that cannot be
+ * the wrong case, a scope value put in mode, leading grep-style flags inside
+ * query, and string numbers for before/after. Values that cannot be
  * repaired are removed and listed under DROPPED_KEY, so the output names them
  * instead of pi rejecting the whole call or recall dropping them silently.
  */
@@ -66,6 +113,16 @@ export const normalizeToolParams = (raw: unknown): Record<string, unknown> => {
   const dropped: string[] = [];
   const drop = (key: string, why: string) => { dropped.push(`${key} ${JSON.stringify(p[key])} (${why})`); delete p[key]; };
 
+  // Query first: leading grep flags may also repair before/after.
+  if (typeof p.query === "string") {
+    const flags = parseGrepFlags(p.query);
+    if (flags.query !== p.query.trim()) {
+      p.query = flags.query;
+      if (p.before === undefined && flags.before !== undefined) p.before = flags.before;
+      if (p.after === undefined && flags.after !== undefined) p.after = flags.after;
+    }
+  }
+
   for (const key of Object.keys(p)) {
     if (!KNOWN_PARAMS.has(key) && key !== DROPPED_KEY) drop(key, "not a vcc_recall param");
   }
@@ -73,6 +130,13 @@ export const normalizeToolParams = (raw: unknown): Record<string, unknown> => {
   if (p.page !== undefined) {
     const n = toIndex(p.page);
     if (n !== undefined && n >= 1) p.page = n; else drop("page", "not a page number");
+  }
+
+  for (const key of ["before", "after"] as const) {
+    if (p[key] === undefined) continue;
+    const n = toIndex(p[key]);
+    // 0 is valid (no context); toIndex already handles strings and #N.
+    if (n !== undefined && n >= 0) p[key] = Math.min(10, n); else drop(key, "not a number of entries");
   }
 
   if (p.expand !== undefined) {
@@ -113,11 +177,13 @@ export const normalizeToolParams = (raw: unknown): Record<string, unknown> => {
 };
 
 /**
- * Tool params -> request. The precedence lives here and only here:
- * #N:path drill-down, then mode:'touched', then expand, then range, then
- * query search, then the most recent entries.
+ * Tool params -> request. The precedence lives here and only here.
+ * Grep profile: #N:path drill-down, then '#N' expansion, then the grep line
+ * search, then the most recent entries. Full profile: #N:path drill-down,
+ * then mode:'touched', then expand, then range, then query search, then the
+ * most recent entries.
  */
-export const parseToolRequest = (params: RecallToolParams): RecallRequest => {
+export const parseToolRequest = (params: RecallToolParams, profile: RecallProfile = "full"): RecallRequest => {
   const scope = normalizeRecallScope(params.scope);
   const q = params.query?.trim();
   const indices = [...new Set(params.expand ?? [])];
@@ -128,19 +194,36 @@ export const parseToolRequest = (params: RecallToolParams): RecallRequest => {
     range: hasRange,
     page: (params.page ?? 1) > 1,
     touched: normalizeRecallMode(params.mode) === "touched",
+    context: params.before !== undefined || params.after !== undefined,
   };
   const droppedRaw = (params as Record<string, unknown>)[DROPPED_KEY];
   const dropped = Array.isArray(droppedRaw) && droppedRaw.length > 0 ? droppedRaw.map(String) : undefined;
   const req = (action: RecallAction, uses: (keyof typeof set)[]): RecallRequest => {
     const ignored = (Object.keys(set) as (keyof typeof set)[])
       .filter((k) => set[k] && !uses.includes(k))
-      .map((k) => (k === "touched" ? "mode" : k));
+      .map((k) => (k === "touched" ? "mode" : k === "context" ? "before/after" : k));
     const base: RecallRequest = dropped ? { scope, action, dropped } : { scope, action };
     return ignored.length > 0 ? { ...base, ignored } : base;
   };
 
   const target = q ? parseDrillDown(q) : null;
   if (target) return req({ kind: "drill", target }, ["query"]);
+  if (profile === "grep") {
+    // '#N' (also '#N, #M' or '12 15') reads those entries in full — the
+    // read(path, offset) idiom against the numbers summary refs point at.
+    // Lenient: a bare number list without # also routes there.
+    if (q && /^#?\d+(?:[,;\s]+#?\d+)*$/.test(q)) {
+      const list = [...q.matchAll(/\d+/g)].map((m) => Number(m[0]));
+      return req({ kind: "expand", indices: list }, ["query"]);
+    }
+    if (q) {
+      return req(
+        { kind: "grep", query: params.query!, before: params.before ?? 1, after: params.after ?? 1 },
+        ["query", "context"],
+      );
+    }
+    return req({ kind: "recent", query: params.query }, []);
+  }
   if (set.touched) return req({ kind: "touched", page: params.page }, ["touched", "page"]);
   if (set.expand) return req({ kind: "expand", indices }, ["expand"]);
   if (hasRange) return req({ kind: "range", range: params.range!, page: Math.max(1, params.page ?? 1) }, ["range", "page"]);

@@ -15,7 +15,7 @@ describe.skipIf(typeof (piCore as any).buildSessionProjection !== "function")("c
     dir = mkdtempSync(join(tmpdir(), "pi-vcc-edits-"));
     previousConfig = process.env.PI_VCC_CONFIG_PATH;
     process.env.PI_VCC_CONFIG_PATH = join(dir, "config.json");
-    writeFileSync(process.env.PI_VCC_CONFIG_PATH, JSON.stringify({ overrideDefaultCompaction: true }));
+    writeFileSync(process.env.PI_VCC_CONFIG_PATH, JSON.stringify({ overrideDefaultCompaction: true, checkpointEnabled: false }));
   });
 
   afterEach(() => {

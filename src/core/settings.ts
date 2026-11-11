@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-export const SETTINGS_PATH_DEFAULT = join(getAgentDir(), "pi-vcc-config.json");
+export const SETTINGS_PATH_DEFAULT = join(getAgentDir(), "pi-vcc-mini.json");
 const settingsPath = (): string => process.env.PI_VCC_CONFIG_PATH ?? SETTINGS_PATH_DEFAULT;
 /** Backwards-compat export. Resolves at access time, not import time. */
 export const SETTINGS_PATH = settingsPath();
@@ -69,7 +69,41 @@ export interface PiVccSettings {
    * Empty by default (feature off).
    */
   trackCommands: string[];
+  /**
+   * Pre-compaction checkpoint (pi-vcc-mini): when context usage reaches
+   * checkpointThreshold, a one-shot message asks the model to write a short
+   * status note (goal / done / next / gotchas) that is then pinned into the
+   * next compaction summary as a [Checkpoint] section. The checkpoint turn
+   * rides the existing prefix, so it costs almost no prefill on cache-friendly
+   * backends. Manual /compact and /pi-vcc also checkpoint first (compaction
+   * is cancelled once, the checkpoint runs, then compaction re-triggers).
+   */
+  checkpointEnabled: boolean;
+  /** Fire the checkpoint when getContextUsage().percent >= this (0..1). Default 0.8. */
+  checkpointThreshold: number;
+  /** Text sent to the model as the checkpoint request. */
+  checkpointPrompt: string;
+  /**
+   * Model-facing vcc_recall surface. "grep" (default): a lean grep-style
+   * search (query + before/after), ~1/6 of the token cost, tuned for small
+   * local models. "full": the upstream multi-mode tool. The /pi-vcc-recall
+   * command keeps the full surface in both profiles.
+   */
+  recallProfile: "grep" | "full";
 }
+
+export const DEFAULT_CHECKPOINT_PROMPT = [
+  "IMPORTANT: reply with the note directly in your chat response. Do not use the write or any other tool for it, and do not create files like SUMMARY.md, LOG.md or notes — files are compacted away too, and only your reply text survives as the checkpoint.",
+  "",
+  "Context checkpoint: the context window is filling up and will be compacted soon.",
+  "Before continuing, write a brief status note (10-20 lines, dense and factual):",
+  "1. The overall goal of this session.",
+  "2. Work completed so far — files, commands, results.",
+  "3. The exact next steps you were about to take.",
+  "4. Key decisions, constraints, gotchas.",
+  "This note is your main anchor after compaction, so keep it self-contained.",
+  "Write the note now as plain reply text, then continue the task.",
+].join("\n");
 
 export const DEFAULT_SETTINGS: PiVccSettings = {
   overrideDefaultCompaction: true,
@@ -79,6 +113,10 @@ export const DEFAULT_SETTINGS: PiVccSettings = {
   skipForProviders: [],
   skipCustomTypes: [],
   trackCommands: [],
+  checkpointEnabled: true,
+  checkpointThreshold: 0.8,
+  checkpointPrompt: DEFAULT_CHECKPOINT_PROMPT,
+  recallProfile: "grep",
 };
 
 const readJson = (path: string): Record<string, unknown> | null => {
@@ -105,6 +143,15 @@ export function loadSettings(): PiVccSettings {
   merged.trackCommands = [
     ...new Set(coerceStringArray(parsed.trackCommands).map((s) => s.trim()).filter(Boolean)),
   ];
+  // Checkpoint settings: coerce defensively — a bad value falls back to the default.
+  merged.checkpointEnabled = typeof parsed.checkpointEnabled === "boolean" ? parsed.checkpointEnabled : DEFAULT_SETTINGS.checkpointEnabled;
+  merged.checkpointThreshold =
+    typeof parsed.checkpointThreshold === "number" && Number.isFinite(parsed.checkpointThreshold) && parsed.checkpointThreshold > 0 && parsed.checkpointThreshold <= 1
+      ? parsed.checkpointThreshold
+      : DEFAULT_SETTINGS.checkpointThreshold;
+  merged.checkpointPrompt =
+    typeof parsed.checkpointPrompt === "string" && parsed.checkpointPrompt.trim().length > 0 ? parsed.checkpointPrompt : DEFAULT_SETTINGS.checkpointPrompt;
+  merged.recallProfile = parsed.recallProfile === "full" ? "full" : "grep";
   return merged;
 }
 
