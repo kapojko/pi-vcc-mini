@@ -34,10 +34,9 @@ const registerGrepRecallTool = (pi: ExtensionAPI) => {
     name: "vcc_recall",
     label: "VCC Recall",
     description: [
-      "Search this session's full raw history (including compacted-away parts) like grep, before claiming context is gone.",
-      "Returns matching lines with entry numbers. Case-insensitive; a regex works too.",
-      "query:'#N' returns entry N in full (N = the number in summary refs like (#12)).",
-      "before/after: entries of context around each hit. grep flags like -C 2 in the query also work.",
+      "Search raw history from this session, including compacted messages.",
+      "Returns matching lines with #N entry refs. Case-insensitive; regex supported.",
+      "query:'#N' reads entry N in full. before/after add neighboring entries (default 1).",
     ].join("\n"),
     promptSnippet:
       "Search raw session history (compacted parts too) with vcc_recall before claiming context is gone; query:'#N' returns entry N in full.",

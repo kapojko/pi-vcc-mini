@@ -2,8 +2,8 @@
 
 > Fork of [sting8k/pi-vcc](https://github.com/sting8k/pi-vcc) (MIT) tuned for **small local models with slow prefill and short context** — the setup where a 99.5% prompt-cache hit rate is the whole point. Two additions on top of upstream 0.11.2:
 >
-> - **Pre-compaction checkpoint (A):** when context reaches ~80%, the model is asked (once per window) to write a short status note — goal / done / next / gotchas. The note rides the cached prefix (near-zero prefill cost) and is **pinned as a `[Checkpoint]` section** into every later pi-vcc summary, so the model's own line of thought survives the algorithmic brief, which would otherwise compress it to one line. Manual `/compact` and `/pi-vcc` checkpoint first, then compact.
-> - **grep-style `vcc_recall` (B):** the model-facing tool is a lean grep — `query` + optional `before`/`after` context entries, `'#N'` for full entries — at **915 chars of declaration vs 2395 upstream (−62%)**. Line-granular output, chronological order, lenient repair of grep flags (`-C 3`) typed into the query. The full multi-mode surface stays available to you via `/pi-vcc-recall` and `recallProfile: "full"`.
+> - **Pre-compaction checkpoint (A):** when context reaches ~80%, the model is asked (once per window) to write a short status note — Goal / Done / Next / Notes. The note rides the cached prefix (near-zero prefill cost) and is **pinned as a `[Checkpoint]` section** into every later pi-vcc summary, so the model's own line of thought survives the algorithmic brief. The section is marked as an earlier snapshot, with later messages taking precedence. Manual `/compact` and `/pi-vcc` ask for the note and stop, then compact.
+> - **grep-style `vcc_recall` (B):** the model-facing tool is a lean grep — `query` + optional `before`/`after` context entries, `'#N'` for full entries — at **773 chars of declaration vs 2395 upstream (−68%)**. Line-granular output, chronological order, lenient repair of grep flags (`-C 3`) typed into the query. The full multi-mode surface stays available to you via `/pi-vcc-recall` and `recallProfile: "full"`.
 >
 > Everything else is upstream pi-vcc: algorithmic compaction (no LLM call, ~1 ms), smart keep-tail, session-global `#N` refs. Config lives in `~/.pi/agent/pi-vcc-mini.json` (separate from upstream's `pi-vcc-config.json`, so both can coexist). Requires Pi >= 1.5.0.
 
@@ -15,11 +15,13 @@ pi install git:github.com/kapojko/pi-vcc-mini
 
 ## Fork settings (on top of upstream's)
 
+The config is **never created or written by the extension** — unset keys always follow the built-in defaults, which new versions may change. Write a key to `~/.pi/agent/pi-vcc-mini.json` yourself to pin it:
+
 | Key | Default | Meaning |
 |---|---|---|
 | `checkpointEnabled` | `true` | Ask the model for a status note before compaction |
 | `checkpointThreshold` | `0.8` | Fire when `getContextUsage().percent >= threshold×100` |
-| `checkpointPrompt` | built-in | The checkpoint request text (numbered goal/done/next/gotchas) |
+| `checkpointPrompt` | built-in | The checkpoint request text (Goal/Done/Next/Notes); manual compaction adds a stop instruction |
 | `recallProfile` | `"grep"` | `"grep"` = lean tool for models; `"full"` = upstream surface |
 
 See [VERIFICATION.md](./VERIFICATION.md) for the test plan and live-model scenarios.
@@ -152,7 +154,7 @@ vcc_recall({ query: "hook|inject" })              // regex works
 vcc_recall({ query: "#1253" })                     // entry #1253 in full (summary refs point here)
 ```
 
-Multi-word queries match the literal phrase first, then fall back to per-term OR. Grep flags typed into the query (`"-C 3 auth"`) are understood. The declaration is 915 chars (upstream's full surface: 2395).
+Multi-word queries match the literal phrase first, then fall back to per-term OR. Grep flags typed into the query (`"-C 3 auth"`) are understood. Context is rendered in before/hit/after order, with shared neighbors deduplicated. The declaration is 773 chars (upstream's full surface: 2395).
 
 ### Your command: `/pi-vcc-recall` (full surface, any profile)
 

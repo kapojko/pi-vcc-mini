@@ -154,20 +154,33 @@ export const runGrep = (
   }
   let shownLines = 0;
   const parts: string[] = [];
-  for (const [entryIndex, entryHitLines] of byEntry) {
+  const groups = [...byEntry].map(([entryIndex, entryHitLines]) => {
+    const pos = rendered.findIndex((entry) => entry.index === entryIndex);
+    return { entry: rendered[pos], entryHitLines, pos };
+  });
+  const renderedContext = new Set<number>();
+  const addContext = (pos: number) => {
+    if (renderedContext.has(pos)) return;
+    renderedContext.add(pos);
+    parts.push(formatContextEntry(rendered[pos]));
+  };
+
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
     if (shownLines >= GREP_MAX_LINES) break;
-    const pos = rendered.findIndex((e) => e.index === entryIndex);
-    const e = rendered[pos];
-    parts.push(`#${e.index} [${e.role}]`);
+    const { entry, entryHitLines, pos } = groups[groupIndex];
+    // Do not cross a neighboring hit: this keeps the complete output in
+    // chronological order and prevents another hit from becoming context.
+    const previousHitPos = groupIndex > 0 ? groups[groupIndex - 1].pos : -1;
+    const nextHitPos = groupIndex + 1 < groups.length ? groups[groupIndex + 1].pos : rendered.length;
+    for (let j = Math.max(previousHitPos + 1, pos - before); j < pos; j++) addContext(j);
+
+    parts.push(`#${entry.index} [${entry.role}]`);
     for (const line of entryHitLines) {
       if (shownLines >= GREP_MAX_LINES) break;
       parts.push(`  ${line}`);
       shownLines++;
     }
-    if (before > 0 || after > 0) {
-      for (let j = Math.max(0, pos - before); j < pos; j++) parts.push(formatContextEntry(rendered[j]));
-      for (let j = pos + 1; j <= Math.min(rendered.length - 1, pos + after); j++) parts.push(formatContextEntry(rendered[j]));
-    }
+    for (let j = pos + 1; j <= Math.min(nextHitPos - 1, pos + after); j++) addContext(j);
   }
 
   const omittedLines = totalLines - shownLines;

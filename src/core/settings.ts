@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export const SETTINGS_PATH_DEFAULT = join(getAgentDir(), "pi-vcc-mini.json");
@@ -72,7 +72,7 @@ export interface PiVccSettings {
   /**
    * Pre-compaction checkpoint (pi-vcc-mini): when context usage reaches
    * checkpointThreshold, a one-shot message asks the model to write a short
-   * status note (goal / done / next / gotchas) that is then pinned into the
+   * status note (Goal / Done / Next / Notes) that is then pinned into the
    * next compaction summary as a [Checkpoint] section. The checkpoint turn
    * rides the existing prefix, so it costs almost no prefill on cache-friendly
    * backends. Manual /compact and /pi-vcc also checkpoint first (compaction
@@ -93,6 +93,22 @@ export interface PiVccSettings {
 }
 
 export const DEFAULT_CHECKPOINT_PROMPT = [
+  "Write a checkpoint for the upcoming context compaction.",
+  "",
+  "Write it directly in chat, using these labels:",
+  "Goal: the overall session objective.",
+  "Done: completed work, including files, commands, and outcomes.",
+  "Next: the immediate remaining actions.",
+  "Notes: important decisions, constraints, and pitfalls.",
+  "",
+  "Be factual, self-contained, and concise (6-12 lines).",
+  "Do not create files or call tools to produce this note.",
+  "Only your reply text is pinned into the next compaction summary.",
+  "Afterward, resume the task normally.",
+].join("\n");
+
+/** Exact 1.0.0 built-in, migrated on load; user-customized prompts are untouched. */
+export const LEGACY_DEFAULT_CHECKPOINT_PROMPT = [
   "IMPORTANT: reply with the note directly in your chat response. Do not use the write or any other tool for it, and do not create files like SUMMARY.md, LOG.md or notes — files are compacted away too, and only your reply text survives as the checkpoint.",
   "",
   "Context checkpoint: the context window is filling up and will be compacted soon.",
@@ -150,41 +166,19 @@ export function loadSettings(): PiVccSettings {
       ? parsed.checkpointThreshold
       : DEFAULT_SETTINGS.checkpointThreshold;
   merged.checkpointPrompt =
-    typeof parsed.checkpointPrompt === "string" && parsed.checkpointPrompt.trim().length > 0 ? parsed.checkpointPrompt : DEFAULT_SETTINGS.checkpointPrompt;
+    typeof parsed.checkpointPrompt === "string" &&
+    parsed.checkpointPrompt.trim().length > 0 &&
+    parsed.checkpointPrompt !== LEGACY_DEFAULT_CHECKPOINT_PROMPT
+      ? parsed.checkpointPrompt
+      : DEFAULT_SETTINGS.checkpointPrompt;
   merged.recallProfile = parsed.recallProfile === "full" ? "full" : "grep";
   return merged;
 }
 
 /**
- * Ensure the config file (Pi's agent dir, or PI_VCC_CONFIG_PATH) exists with default keys.
- * - File missing → create with full default block.
- * - File exists but invalid JSON → no-op (don't clobber user file).
- * - File exists and valid → fill in missing default keys, preserve existing values.
+ * The config file is never created or written by the extension: unset keys
+ * always follow the built-in defaults, which new versions may change; a key
+ * written by the user pins it. (Historically, 1.0.0 scaffolded the full
+ * default block — an exact legacy built-in prompt found there is treated as
+ * unset.)
  */
-export function scaffoldSettings(): void {
-  try {
-    const path = settingsPath();
-    const dir = dirname(path);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-    if (!existsSync(path)) {
-      writeFileSync(path, `${JSON.stringify(DEFAULT_SETTINGS, null, 2)}\n`);
-      return;
-    }
-
-    const parsed = readJson(path);
-    if (!parsed || typeof parsed !== "object") return; // don't clobber
-
-    let changed = false;
-    const next: Record<string, unknown> = { ...parsed };
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-      if (!(key in next)) {
-        next[key] = value;
-        changed = true;
-      }
-    }
-    if (changed) writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
-  } catch {
-    // best-effort; never crash extension load
-  }
-}

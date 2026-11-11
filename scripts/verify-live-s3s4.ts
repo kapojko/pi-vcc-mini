@@ -6,7 +6,7 @@
  * Run: PI_VCC_CKPT_DEBUG=1 bun run scripts/verify-live-s3s4.ts
  */
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -63,6 +63,21 @@ const dump = (label: string) => {
 };
 
 try {
+  // Self-contained fixtures: big enough that pi's compaction accepts the
+  // session ("Nothing to compact" below its minimum) — a fresh empty dir
+  // otherwise makes both manual compacts no-ops.
+  const fixture = (name: string, topic: string) => {
+    const file = join(CWD, name);
+    if (!existsSync(file)) {
+      writeFileSync(
+        file,
+        Array.from({ length: 350 }, (_, i) => `${topic} item ${i}: alpha beta gamma delta epsilon memory cache latency throughput quantization inference server context`).join("\n") + "\n",
+      );
+    }
+  };
+  fixture("report.txt", "report");
+  fixture("notes.txt", "notes");
+
   console.log("--- turn 1: read report.txt");
   await session.prompt("Read the file report.txt in this directory and summarize it in three sentences.");
   console.log("--- turn 2: read notes.txt");

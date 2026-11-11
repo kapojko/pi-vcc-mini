@@ -1,9 +1,9 @@
 # pi-vcc-mini verification plan
 
-Three layers. Layers 1–2 are already wired into `bun test` (513 tests, 0 fail):
+Three layers. Layers 1–2 are already wired into `bun test`:
 
-- **Layer 1 (offline, no LLM)** — checkpoint span extraction, `[Checkpoint]` pinning / replace-not-accumulate / kept-in-full note, manual-compact interception + re-trigger, grep flag repair, grep line matching / caps / context / `#N` routing, declaration-size regression guard (`tests/checkpoint.test.ts`, `tests/grep-recall.test.ts`).
-- **Layer 2 (offline, declaration cost)** — `grep` profile measures **915 chars** vs **2395** for `full` (−62%); pinned by test.
+- **Layer 1 (offline, no LLM)** — checkpoint span extraction, `[Checkpoint]` pinning / replace-not-accumulate / kept-in-full note, stale-snapshot notice, manual-compact interception + stop instruction + re-trigger, grep flag repair, grep line matching / caps / chronological deduplicated context / `#N` routing, declaration-size regression guard (`tests/checkpoint.test.ts`, `tests/grep-recall.test.ts`).
+- **Layer 2 (offline, declaration cost)** — `grep` profile measures **773 chars** vs **2395** for `full` (−68%); pinned by test.
 
 ## Layer 3 — live mechanics (any model pi defaults to; a fast local model keeps runs short)
 

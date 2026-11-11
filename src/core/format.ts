@@ -68,6 +68,9 @@ export const RECALL_NOTE =
   "Use `vcc_recall` to search for prior work, decisions, and context from before this summary. " +
   "Do not redo work already completed.";
 
+/** A checkpoint is written before compaction and may predate later work. */
+export const CHECKPOINT_STALENESS_NOTE = "Earlier snapshot; later messages take precedence.";
+
 export interface FormatSummaryOptions {
   capBriefTranscript?: boolean;
 }
@@ -77,7 +80,7 @@ export const formatSummary = (data: SectionData, options: FormatSummaryOptions =
   const headerParts = [
     // pi-vcc-mini: the model-written checkpoint leads the summary; it is the
     // anchor the model needs to continue after compaction. Free text.
-    data.checkpoint ? `[Checkpoint]\n${data.checkpoint}` : "",
+    data.checkpoint ? `[Checkpoint]\n${CHECKPOINT_STALENESS_NOTE}\n\n${data.checkpoint}` : "",
     section("Early Session Requests", data.earlyRequests),
     section("Files And Changes", data.filesAndChanges),
     section("Commits", data.commits),

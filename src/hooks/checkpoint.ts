@@ -78,9 +78,18 @@ export const isManualCompactPending = (): boolean => state.manualPending !== nul
 export const effectiveSkipCustomTypes = (settings: PiVccSettings): string[] =>
   [...new Set([...settings.skipCustomTypes, CHECKPOINT_CUSTOM_TYPE])];
 
-const checkpointMessage = (settings: PiVccSettings) => ({
+const AUTOMATIC_CHECKPOINT_ENDING = "Afterward, resume the task normally.";
+const MANUAL_CHECKPOINT_ENDING = "Stop after the note; compaction will follow automatically.";
+
+/** Manual compaction must not turn into more task work before the retry. */
+const manualCheckpointPrompt = (prompt: string): string =>
+  prompt.includes(AUTOMATIC_CHECKPOINT_ENDING)
+    ? prompt.replace(AUTOMATIC_CHECKPOINT_ENDING, MANUAL_CHECKPOINT_ENDING)
+    : `${prompt}\n\n${MANUAL_CHECKPOINT_ENDING}`;
+
+const checkpointMessage = (settings: PiVccSettings, manual = false) => ({
   customType: CHECKPOINT_CUSTOM_TYPE,
-  content: settings.checkpointPrompt,
+  content: manual ? manualCheckpointPrompt(settings.checkpointPrompt) : settings.checkpointPrompt,
   display: true,
   details: undefined,
 });
@@ -187,7 +196,7 @@ export const interceptManualCompact = (
     retriggerCompact(ctx, pending.customInstructions);
   });
   try {
-    pi.sendMessage(checkpointMessage(settings), { triggerTurn: true });
+    pi.sendMessage(checkpointMessage(settings, true), { triggerTurn: true });
     ckptLog("sendMessage returned without throwing");
   } catch (e) {
     ckptLog("sendMessage threw:", e);

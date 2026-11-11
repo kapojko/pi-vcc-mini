@@ -132,6 +132,20 @@ describe("runGrep", () => {
     expect(out).toContain("  > #3 [assistant]");
   });
 
+  it("keeps before/hit/after context chronological and deduplicates shared neighbors", () => {
+    const file = writeSession([
+      msg("m0", "user", "lead in"),
+      msg("m1", "assistant", "target one"),
+      msg("m2", "assistant", "shared neighbor"),
+      msg("m3", "assistant", "target two"),
+      msg("m4", "assistant", "tail"),
+    ]);
+    const out = runGrep("target", view(file, ["m0", "m1", "m2", "m3", "m4"]), { before: 1, after: 1 });
+    const refs = [...out.matchAll(/#(\d+)/g)].map((m) => Number(m[1]));
+    expect(refs).toEqual([0, 1, 2, 3, 4]);
+    expect(out.match(/^  > #2 /gm)).toHaveLength(1);
+  });
+
   it("before:0/after:0 drops context entirely", () => {
     const { v } = setup();
     const out = runGrep("maxmemory", v, { before: 0, after: 0 });
@@ -198,14 +212,15 @@ describe("grep profile registration", () => {
     expect(tool.parameters.required).toEqual(["query"]);
   });
 
-  it("keeps the declaration far below the full profile's size", () => {
+  it("pins the declaration sizes and keeps grep far below the full profile", () => {
     let grepTool: any;
     let fullTool: any;
     registerRecallTool({ registerTool: (t: any) => { grepTool = t; } } as any, "grep");
     registerRecallTool({ registerTool: (t: any) => { fullTool = t; } } as any, "full");
     const size = (t: any) =>
       JSON.stringify({ description: t.description, promptSnippet: t.promptSnippet, parameters: t.parameters }).length;
-    expect(size(grepTool)).toBeLessThan(1000);
+    expect(size(grepTool)).toBe(773);
+    expect(size(fullTool)).toBe(2395);
     expect(size(grepTool)).toBeLessThan(size(fullTool) / 2);
   });
 

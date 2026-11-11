@@ -2,6 +2,18 @@
 
 All notable changes are documented in this file. Entries after `0.11.2` are pi-vcc-mini (the kapojko fork for local models).
 
+## [1.0.1]
+
+### Changed
+
+- **Clearer checkpoints** — the default prompt now asks for concise `Goal` / `Done` / `Next` / `Notes` labels without claiming files are compacted away. Automatic checkpoints resume the task; manual checkpoints explicitly stop before compaction. The `[Checkpoint]` section warns that it is an earlier snapshot and later messages take precedence. Configs containing the exact previous built-in prompt are migrated; custom prompts are preserved.
+- **Live defaults, pinned config** — the extension no longer creates or back-fills `~/.pi/agent/pi-vcc-mini.json`: unset keys always follow the built-in defaults, which new versions may change, and writing a key pins it. Configs scaffolded by 1.0.0 (full default block) keep working; an exact legacy built-in `checkpointPrompt` loads as the new default.
+- **Smaller grep recall declaration** — simplified model-facing wording reduces the declaration from 915 to 773 chars (2395 for the full profile).
+
+### Fixed
+
+- **Chronological grep context** — `before` entries now appear before their hit, followed by `after` entries; shared context between neighboring hits is emitted once.
+
 ## [1.0.0] — pi-vcc-mini fork
 
 ### Added

@@ -10,6 +10,7 @@ import {
   resetCheckpointState,
 } from "../src/hooks/checkpoint";
 import { compileRanked } from "../src/core/summarize";
+import { CHECKPOINT_STALENESS_NOTE } from "../src/core/format";
 import { DEFAULT_SETTINGS, DEFAULT_CHECKPOINT_PROMPT } from "../src/core/settings";
 import type { PiVccSettings } from "../src/core/settings";
 import type { Message } from "@earendil-works/pi-ai";
@@ -173,9 +174,9 @@ describe("[Checkpoint] summary section", () => {
     { role: "assistant", content: [{ type: "text", text: "fixed it" }], timestamp: 0 } as any,
   ];
 
-  it("pins the model text as the leading section", () => {
+  it("pins the model text as the leading section, marked as an earlier snapshot", () => {
     const summary = compileRanked({ messages, checkpoint: "Status: auth fixed." });
-    expect(summary.startsWith("[Checkpoint]\nStatus: auth fixed.")).toBe(true);
+    expect(summary.startsWith(`[Checkpoint]\n${CHECKPOINT_STALENESS_NOTE}\n\nStatus: auth fixed.`)).toBe(true);
   });
 
   it("replaces, not accumulates, across compactions", () => {
@@ -183,6 +184,7 @@ describe("[Checkpoint] summary section", () => {
     const second = compileRanked({ messages, checkpoint: "new status", previousSummary: first });
     const occurrences = second.split("[Checkpoint]").length - 1;
     expect(occurrences).toBe(1);
+    expect(second.split(CHECKPOINT_STALENESS_NOTE)).toHaveLength(2);
     expect(second).toContain("new status");
     expect(second).not.toContain("old status");
   });
@@ -226,8 +228,20 @@ describe("manual compact interception", () => {
     expect(interceptManualCompact(pi, settings, "instructions", ctx)).toBe(true);
     expect(sent).toHaveLength(1);
     expect(sent[0].m.customType).toBe(CHECKPOINT_CUSTOM_TYPE);
-    expect(sent[0].m.content).toBe(DEFAULT_CHECKPOINT_PROMPT);
+    expect(sent[0].m.content).not.toBe(DEFAULT_CHECKPOINT_PROMPT);
+    expect(sent[0].m.content).toContain("Goal: the overall session objective.");
+    expect(sent[0].m.content).toContain("Stop after the note; compaction will follow automatically.");
+    expect(sent[0].m.content).not.toContain("Afterward, resume the task normally.");
     expect(sent[0].o.triggerTurn).toBe(true);
+  });
+
+  it("adds the stop instruction to a custom manual checkpoint prompt", () => {
+    const { pi, ctx, sent } = makePi();
+    const customSettings = { ...settings, checkpointPrompt: "Write my custom checkpoint." };
+    expect(interceptManualCompact(pi, customSettings, undefined, ctx)).toBe(true);
+    expect(sent[0].m.content).toBe(
+      "Write my custom checkpoint.\n\nStop after the note; compaction will follow automatically.",
+    );
   });
 
   it("does not intercept twice in one window, and not when disabled", () => {
