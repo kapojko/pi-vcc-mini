@@ -2,6 +2,12 @@
 
 All notable changes are documented in this file. Entries after `0.11.2` are pi-vcc-mini (the kapojko fork for local models).
 
+## [1.0.2]
+
+### Fixed
+
+- **Checkpoint docs match the code** — the `[Checkpoint]` section is pinned only when the note was written before the kept tail. A note inside the kept tail is not repeated in the summary (it stays in the context as is), and a pinned note is carried into later summaries until a newer one replaces it. README, code comments and the live test plan claimed "every later summary" without that distinction.
+
 ## [1.0.1]
 
 ### Changed

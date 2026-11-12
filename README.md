@@ -2,7 +2,7 @@
 
 > Fork of [sting8k/pi-vcc](https://github.com/sting8k/pi-vcc) (MIT) tuned for **small local models with slow prefill and short context** — the setup where a 99.5% prompt-cache hit rate is the whole point. Two additions on top of upstream 0.11.2:
 >
-> - **Pre-compaction checkpoint (A):** when context reaches ~80%, the model is asked (once per window) to write a short status note — Goal / Done / Next / Notes. The note rides the cached prefix (near-zero prefill cost) and is **pinned as a `[Checkpoint]` section** into every later pi-vcc summary, so the model's own line of thought survives the algorithmic brief. The section is marked as an earlier snapshot, with later messages taking precedence. Manual `/compact` and `/pi-vcc` ask for the note and stop, then compact.
+> - **Pre-compaction checkpoint (A):** when context reaches ~80%, the model is asked (once per window) to write a short status note — Goal / Done / Next / Notes. The note rides the cached prefix (near-zero prefill cost) and is **pinned as a leading `[Checkpoint]` section** when it was written before the kept tail; a note still inside the kept tail stays there and is not repeated in the summary. A pinned section is marked as an earlier snapshot (later messages take precedence) and is carried into later summaries until a newer note replaces it, so the model's own line of thought survives the algorithmic brief. Manual `/compact` and `/pi-vcc` ask for the note and stop, then compact.
 > - **grep-style `vcc_recall` (B):** the model-facing tool is a lean grep — `query` + optional `before`/`after` context entries, `'#N'` for full entries — at **773 chars of declaration vs 2395 upstream (−68%)**. Line-granular output, chronological order, lenient repair of grep flags (`-C 3`) typed into the query. The full multi-mode surface stays available to you via `/pi-vcc-recall` and `recallProfile: "full"`.
 >
 > Everything else is upstream pi-vcc: algorithmic compaction (no LLM call, ~1 ms), smart keep-tail, session-global `#N` refs. Config lives in `~/.pi/agent/pi-vcc-mini.json` (separate from upstream's `pi-vcc-config.json`, so both can coexist). Requires Pi >= 1.5.0.
@@ -23,6 +23,8 @@ The config is **never created or written by the extension** — unset keys alway
 | `checkpointThreshold` | `0.8` | Fire when `getContextUsage().percent >= threshold×100` |
 | `checkpointPrompt` | built-in | The checkpoint request text (Goal/Done/Next/Notes); manual compaction adds a stop instruction |
 | `recallProfile` | `"grep"` | `"grep"` = lean tool for models; `"full"` = upstream surface |
+
+**When `[Checkpoint]` appears.** The note is pinned only when it falls before the cut, so the kept tail starts after it. A note still inside the kept tail is not repeated in the summary: the summary sits ahead of the tail, and pinning such a note would show it before messages that are already newer, while the summary cannot represent the interleaving. Unpinned notes stay in the context as ordinary messages; after the next compaction their text survives only through the brief transcript, truncated. Once a note is pinned, later summaries carry the latest pinned one — replaced when a newer note is pinned, otherwise kept as an earlier snapshot.
 
 See [VERIFICATION.md](./VERIFICATION.md) for the test plan and live-model scenarios.
 

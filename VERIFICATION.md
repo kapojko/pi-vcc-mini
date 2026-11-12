@@ -14,10 +14,14 @@ Set `~/.pi/agent/pi-vcc-mini.json` to `{"checkpointThreshold": 0.01, "debug": tr
 | S1 | mid-run injection | ask for a multi-tool task (e.g. "list files, then read README, then count lines") | `vcc-checkpoint-request` custom_message appears **after the tool results, before the next assistant message**; model writes a status note, then continues the task |
 | S2 | run-end force | single-response task (no tools) | one checkpoint turn is forced after the response; **exactly one** — no loop |
 | S3 | manual `/compact` | run `/compact some instructions` while above threshold (first window) | order in JSONL: checkpoint request → assistant note → compaction entry; instructions preserved in the summary flow; only one compaction (no double-compact) |
-| S4 | durability | trigger two compactions after a checkpoint | `[Checkpoint]` appears **once** in the latest summary, newest text |
+| S4 | durability | trigger two compactions after a checkpoint, with a user turn after the note | `[Checkpoint]` appears **once** in the latest summary, newest pinned text; a note still inside the kept tail right after it is not pinned — that is expected |
 | S5 | one-shot guard | keep working above threshold | no second checkpoint request until a compaction has happened |
 | S6 | no ghost turns | let a threshold compaction fire right after a checkpoint turn | run self-resumes cleanly (pi 1.5.2), no stray empty turn |
 | S7 | cache stays hot | watch the local server's metrics or usage on the checkpoint turn | prompt-cache hit rate on the checkpoint turn ≈ the session baseline (~99.5%) |
+
+**Pin expectation.** `[Checkpoint]` is pinned only when the note was written before the cut (behind the kept tail). With the default `keep:1` the fresh note usually sits inside the kept tail, so the first summary after it has no section — expected, the note stays in the context as is. Once pinned, the section is carried into later summaries (marked as an earlier snapshot) until a newer note replaces it.
+
+**After the note.** The run can end right after a note-only reply: `continue: true` is consumed by the checkpoint turn itself, and a plain reply with no tool call ends the run. Continuation is model behaviour; the options are recorded in `TODO_checkpoint_continue.md`.
 
 Reset config to `checkpointThreshold: 0.8` afterwards.
 

@@ -25,8 +25,9 @@ export interface CompileInput {
   /**
    * pi-vcc-mini: the model-written pre-compaction checkpoint to pin as the
    * leading [Checkpoint] section. Undefined when the checkpoint exchange is
-   * still in the kept tail (it survives on its own) or none exists. Capped
-   * by the caller (hooks/before-compact.ts) to checkpointBudgetTokens.
+   * still in the kept tail (it stays in the context as is, and a summary-level
+   * copy would sit ahead of messages that are newer than the note) or when
+   * none exists.
    */
   checkpoint?: string;
 }

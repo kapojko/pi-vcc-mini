@@ -6,10 +6,13 @@ import { textParts } from "../core/content";
  * Pre-compaction checkpoint (pi-vcc-mini addition).
  *
  * When context usage reaches `checkpointThreshold`, a one-shot message asks
- * the model to write a short status note. The note is then pinned into the
- * next compaction summary as a [Checkpoint] section (see summarize.ts), so
- * the model's own "line of thought" survives pi-vcc's algorithmic brief,
- * which would otherwise compress it to roughly one line.
+ * the model to write a short status note. The note leads the next compaction
+ * summary as a [Checkpoint] section (see summarize.ts) when its exchange
+ * falls before the cut. When it is still inside the kept tail it is not
+ * pinned: it stays in the context unchanged, and the summary sits ahead of
+ * the tail, so a summary-level copy would show the note before messages that
+ * are already newer than it. A note that was never pinned survives only as
+ * brief transcript text after the next compaction.
  *
  * Injection points:
  *  - turn_end: a custom_message entry appended via the boundary API plus
@@ -25,7 +28,8 @@ import { textParts } from "../core/content";
  *
  * The checkpoint request message itself is excluded from the summarizer
  * input (it is identical boilerplate every time) — see
- * effectiveSkipCustomTypes() — while the model's response is pinned.
+ * effectiveSkipCustomTypes() — while the model's response stays available to
+ * the summarizer and is pinned only in the case described above.
  */
 
 /** customType of the checkpoint request message. */

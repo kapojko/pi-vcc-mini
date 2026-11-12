@@ -72,11 +72,13 @@ export interface PiVccSettings {
   /**
    * Pre-compaction checkpoint (pi-vcc-mini): when context usage reaches
    * checkpointThreshold, a one-shot message asks the model to write a short
-   * status note (Goal / Done / Next / Notes) that is then pinned into the
-   * next compaction summary as a [Checkpoint] section. The checkpoint turn
-   * rides the existing prefix, so it costs almost no prefill on cache-friendly
-   * backends. Manual /compact and /pi-vcc also checkpoint first (compaction
-   * is cancelled once, the checkpoint runs, then compaction re-triggers).
+   * status note (Goal / Done / Next / Notes) that leads the next compaction
+   * summary as a [Checkpoint] section when it was written before the kept
+   * tail (a note inside the tail stays there and is not repeated). The
+   * checkpoint turn rides the existing prefix, so it costs almost no prefill
+   * on cache-friendly backends. Manual /compact and /pi-vcc also checkpoint
+   * first (compaction is cancelled once, the checkpoint runs, then compaction
+   * re-triggers).
    */
   checkpointEnabled: boolean;
   /** Fire the checkpoint when getContextUsage().percent >= this (0..1). Default 0.8. */
