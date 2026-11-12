@@ -11,7 +11,7 @@ import {
 } from "../src/hooks/checkpoint";
 import { compileRanked } from "../src/core/summarize";
 import { CHECKPOINT_STALENESS_NOTE } from "../src/core/format";
-import { DEFAULT_SETTINGS, DEFAULT_CHECKPOINT_PROMPT } from "../src/core/settings";
+import { DEFAULT_SETTINGS, DEFAULT_CHECKPOINT_PROMPT, AUTOMATIC_CHECKPOINT_ENDING } from "../src/core/settings";
 import type { PiVccSettings } from "../src/core/settings";
 import type { Message } from "@earendil-works/pi-ai";
 
@@ -231,8 +231,23 @@ describe("manual compact interception", () => {
     expect(sent[0].m.content).not.toBe(DEFAULT_CHECKPOINT_PROMPT);
     expect(sent[0].m.content).toContain("Goal: the overall session objective.");
     expect(sent[0].m.content).toContain("Stop after the note; compaction will follow automatically.");
-    expect(sent[0].m.content).not.toContain("Afterward, resume the task normally.");
+    // The automatic "keep going after the note" instruction must be gone:
+    // a manual checkpoint is followed by compaction, not by more task work.
+    expect(sent[0].m.content).not.toContain(AUTOMATIC_CHECKPOINT_ENDING);
+    expect(sent[0].m.content).not.toContain("Do not end the run with the note alone");
     expect(sent[0].o.triggerTurn).toBe(true);
+  });
+
+  it("swaps a legacy closing sentence in a pinned prompt for the stop instruction", () => {
+    const { pi, ctx, sent } = makePi();
+    const legacySettings = {
+      ...settings,
+      checkpointPrompt: "Write my custom checkpoint.\n\nAfterward, resume the task normally.",
+    };
+    expect(interceptManualCompact(pi, legacySettings, undefined, ctx)).toBe(true);
+    expect(sent[0].m.content).toBe(
+      "Write my custom checkpoint.\n\nStop after the note; compaction will follow automatically.",
+    );
   });
 
   it("adds the stop instruction to a custom manual checkpoint prompt", () => {

@@ -3,8 +3,10 @@ import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  AUTOMATIC_CHECKPOINT_ENDING,
   DEFAULT_CHECKPOINT_PROMPT,
   DEFAULT_SETTINGS,
+  LEGACY_CHECKPOINT_PROMPT_1_0_1,
   LEGACY_DEFAULT_CHECKPOINT_PROMPT,
   loadSettings,
 } from "../src/core/settings";
@@ -33,6 +35,17 @@ describe("config loading", () => {
   it("loads the new default when the config contains the exact legacy built-in", () => {
     writeFileSync(configPath, JSON.stringify({ checkpointPrompt: LEGACY_DEFAULT_CHECKPOINT_PROMPT }));
     expect(loadSettings().checkpointPrompt).toBe(DEFAULT_CHECKPOINT_PROMPT);
+  });
+
+  it("loads the new default when the config contains the previous (1.0.1) built-in", () => {
+    writeFileSync(configPath, JSON.stringify({ checkpointPrompt: LEGACY_CHECKPOINT_PROMPT_1_0_1 }));
+    expect(loadSettings().checkpointPrompt).toBe(DEFAULT_CHECKPOINT_PROMPT);
+  });
+
+  it("keeps the automatic ending in the default prompt", () => {
+    expect(DEFAULT_CHECKPOINT_PROMPT).toContain(AUTOMATIC_CHECKPOINT_ENDING);
+    expect(AUTOMATIC_CHECKPOINT_ENDING).toContain("Do not end the run with the note alone");
+    expect(DEFAULT_CHECKPOINT_PROMPT).not.toContain("Afterward, resume the task normally.");
   });
 
   it("preserves a custom checkpoint prompt", () => {

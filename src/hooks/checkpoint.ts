@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadSettings, type PiVccSettings } from "../core/settings";
+import { AUTOMATIC_CHECKPOINT_ENDING, loadSettings, type PiVccSettings } from "../core/settings";
 import { textParts } from "../core/content";
 
 /**
@@ -82,14 +82,28 @@ export const isManualCompactPending = (): boolean => state.manualPending !== nul
 export const effectiveSkipCustomTypes = (settings: PiVccSettings): string[] =>
   [...new Set([...settings.skipCustomTypes, CHECKPOINT_CUSTOM_TYPE])];
 
-const AUTOMATIC_CHECKPOINT_ENDING = "Afterward, resume the task normally.";
 const MANUAL_CHECKPOINT_ENDING = "Stop after the note; compaction will follow automatically.";
 
-/** Manual compaction must not turn into more task work before the retry. */
-const manualCheckpointPrompt = (prompt: string): string =>
-  prompt.includes(AUTOMATIC_CHECKPOINT_ENDING)
-    ? prompt.replace(AUTOMATIC_CHECKPOINT_ENDING, MANUAL_CHECKPOINT_ENDING)
-    : `${prompt}\n\n${MANUAL_CHECKPOINT_ENDING}`;
+/** Automatic-prompt closings from before the shared constant, e.g. a pinned 1.0.1 prompt. */
+const LEGACY_AUTOMATIC_ENDINGS = ["Afterward, resume the task normally."];
+
+/**
+ * Manual compaction must not turn into more task work before the retry, so
+ * the automatic "continue afterward" sentence is swapped for a stop
+ * instruction (a legacy closing sentence, if the prompt still carries one,
+ * is swapped too; any other custom prompt gets the stop instruction
+ * appended). The current sentence lives in settings.ts next to the prompt it
+ * belongs to — the two must stay in sync.
+ */
+const manualCheckpointPrompt = (prompt: string): string => {
+  if (prompt.includes(AUTOMATIC_CHECKPOINT_ENDING)) {
+    return prompt.replace(AUTOMATIC_CHECKPOINT_ENDING, MANUAL_CHECKPOINT_ENDING);
+  }
+  for (const legacy of LEGACY_AUTOMATIC_ENDINGS) {
+    if (prompt.includes(legacy)) return prompt.replace(legacy, MANUAL_CHECKPOINT_ENDING);
+  }
+  return `${prompt}\n\n${MANUAL_CHECKPOINT_ENDING}`;
+};
 
 const checkpointMessage = (settings: PiVccSettings, manual = false) => ({
   customType: CHECKPOINT_CUSTOM_TYPE,

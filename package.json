@@ -1,6 +1,6 @@
 {
   "name": "pi-vcc-mini",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "pi-vcc fork for local models: algorithmic compaction plus model-written pre-compaction checkpoints and a grep-style vcc_recall",
   "license": "MIT",
   "main": "index.ts",

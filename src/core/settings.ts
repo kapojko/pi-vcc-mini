@@ -94,7 +94,37 @@ export interface PiVccSettings {
   recallProfile: "grep" | "full";
 }
 
+/**
+ * Closing instruction of the automatic checkpoint prompt: the note is not an
+ * end-of-run report, the task continues after it. Shared with
+ * hooks/checkpoint.ts, which swaps it out for a stop instruction on manual
+ * compaction, so both files must read the same constant.
+ *
+ * The wording is deliberately explicit ("immediately", "do not end the run
+ * with the note alone"): small local models treat a status-note request as a
+ * wrapping-up signal and otherwise stop after the note, leaving the task
+ * stalled until the user nudges it (see TODO_checkpoint_continue.md).
+ */
+export const AUTOMATIC_CHECKPOINT_ENDING =
+  "After the note, if work remains, continue immediately with the next action from Next, using tools as needed. Do not end the run with the note alone; stop only when the task is already complete.";
+
 export const DEFAULT_CHECKPOINT_PROMPT = [
+  "Write a checkpoint for the upcoming context compaction.",
+  "",
+  "Write it directly in chat, using these labels:",
+  "Goal: the overall session objective.",
+  "Done: completed work, including files, commands, and outcomes.",
+  "Next: the immediate remaining actions.",
+  "Notes: important decisions, constraints, and pitfalls.",
+  "",
+  "Be factual, self-contained, and concise (6-12 lines).",
+  "Do not create files or call tools just to produce this note.",
+  "Only your reply text is pinned into the next compaction summary.",
+  AUTOMATIC_CHECKPOINT_ENDING,
+].join("\n");
+
+/** Exact 1.0.1-1.0.2 built-in (the weak "Afterward, resume" line), migrated on load. */
+export const LEGACY_CHECKPOINT_PROMPT_1_0_1 = [
   "Write a checkpoint for the upcoming context compaction.",
   "",
   "Write it directly in chat, using these labels:",
@@ -122,6 +152,12 @@ export const LEGACY_DEFAULT_CHECKPOINT_PROMPT = [
   "This note is your main anchor after compaction, so keep it self-contained.",
   "Write the note now as plain reply text, then continue the task.",
 ].join("\n");
+
+/** Every superseded built-in prompt; an exact match means "unset", not "custom". */
+const LEGACY_CHECKPOINT_PROMPTS: readonly string[] = [
+  LEGACY_DEFAULT_CHECKPOINT_PROMPT,
+  LEGACY_CHECKPOINT_PROMPT_1_0_1,
+];
 
 export const DEFAULT_SETTINGS: PiVccSettings = {
   overrideDefaultCompaction: true,
@@ -170,7 +206,7 @@ export function loadSettings(): PiVccSettings {
   merged.checkpointPrompt =
     typeof parsed.checkpointPrompt === "string" &&
     parsed.checkpointPrompt.trim().length > 0 &&
-    parsed.checkpointPrompt !== LEGACY_DEFAULT_CHECKPOINT_PROMPT
+    !LEGACY_CHECKPOINT_PROMPTS.includes(parsed.checkpointPrompt)
       ? parsed.checkpointPrompt
       : DEFAULT_SETTINGS.checkpointPrompt;
   merged.recallProfile = parsed.recallProfile === "full" ? "full" : "grep";
@@ -182,5 +218,5 @@ export function loadSettings(): PiVccSettings {
  * always follow the built-in defaults, which new versions may change; a key
  * written by the user pins it. (Historically, 1.0.0 scaffolded the full
  * default block — an exact legacy built-in prompt found there is treated as
- * unset.)
+ * unset. Every superseded built-in is listed in LEGACY_CHECKPOINT_PROMPTS.)
  */

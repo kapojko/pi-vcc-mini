@@ -21,7 +21,7 @@ The config is **never created or written by the extension** — unset keys alway
 |---|---|---|
 | `checkpointEnabled` | `true` | Ask the model for a status note before compaction |
 | `checkpointThreshold` | `0.8` | Fire when `getContextUsage().percent >= threshold×100` |
-| `checkpointPrompt` | built-in | The checkpoint request text (Goal/Done/Next/Notes); manual compaction adds a stop instruction |
+| `checkpointPrompt` | built-in | The checkpoint request text (Goal/Done/Next/Notes). Automatic checkpoints end with a "continue with the next action" instruction; manual compaction swaps that instruction for a stop instruction |
 | `recallProfile` | `"grep"` | `"grep"` = lean tool for models; `"full"` = upstream surface |
 
 **When `[Checkpoint]` appears.** The note is pinned only when it falls before the cut, so the kept tail starts after it. A note still inside the kept tail is not repeated in the summary: the summary sits ahead of the tail, and pinning such a note would show it before messages that are already newer, while the summary cannot represent the interleaving. Unpinned notes stay in the context as ordinary messages; after the next compaction their text survives only through the brief transcript, truncated. Once a note is pinned, later summaries carry the latest pinned one — replaced when a newer note is pinned, otherwise kept as an earlier snapshot.

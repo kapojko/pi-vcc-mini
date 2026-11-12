@@ -2,6 +2,12 @@
 
 All notable changes are documented in this file. Entries after `0.11.2` are pi-vcc-mini (the kapojko fork for local models).
 
+## [1.0.3]
+
+### Changed
+
+- **Checkpoint prompt pushes continuation harder** — the automatic checkpoint prompt now ends with "After the note, if work remains, continue immediately with the next action from Next, using tools as needed. Do not end the run with the note alone; stop only when the task is already complete." (was "Afterward, resume the task normally."), and the tool warning reads "just to produce this note" so it no longer reads like a ban on tools after the note. Small local models treated the note as a wrapping-up signal and stopped there, stalling the task until the user nudged them. The continue/stop sentences now live in one exported constant (`AUTOMATIC_CHECKPOINT_ENDING`, `src/core/settings.ts`); manual compaction still swaps it for the stop instruction — including the legacy "Afterward, resume the task normally." sentence in a pinned prompt — and a config holding the exact 1.0.1 built-in prompt migrates to the new default. Continuation stays advice: whether the model keeps working after the note is model behaviour, see `TODO_checkpoint_continue.md`.
+
 ## [1.0.2]
 
 ### Fixed
